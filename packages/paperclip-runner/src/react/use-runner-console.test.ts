@@ -21,8 +21,20 @@ describe("runner console reconnect", () => {
     expect(cursor.seenSourceEventIds.size).toBe(0);
 
     expect(acceptRunnerStreamEvent(cursor, first, 2, 2)).toBe(true);
-    expect(acceptRunnerStreamEvent(cursor, first, 2, 2)).toBe(false);
-    expect(cursor.cursor).toBe(1);
+    expect(acceptRunnerStreamEvent(cursor, first, 2, 2)).toBe(true);
+    expect(cursor.cursor).toBe(2);
+    expect(cursor.seenSourceEventIds.size).toBe(1);
+  });
+
+  it("forgets source ids outside the retained ring", () => {
+    const cursor = createRunnerStreamCursor();
+    for (let index = 0; index < 4096; index += 1) {
+      expect(acceptRunnerStreamEvent(cursor, event(`source-${index}`), 1, 1)).toBe(true);
+    }
+    expect(cursor.seenSourceEventIds.has("source-0")).toBe(true);
+    expect(acceptRunnerStreamEvent(cursor, event("source-4096"), 1, 1)).toBe(true);
+    expect(cursor.seenSourceEventIds.has("source-0")).toBe(false);
+    expect(cursor.seenSourceEventIds.size).toBe(4096);
   });
 
   it("keeps the server cursor when a replay page repeats events the socket already accepted", () => {
@@ -37,6 +49,15 @@ describe("runner console reconnect", () => {
 
     expect(fresh.map((entry) => entry.sourceEventId)).toEqual(["source-2"]);
     expect(cursor.cursor).toBe(4097);
+
+    const duplicatePage = takeFreshStreamEvents(
+      createRunnerStreamCursor(),
+      [event("source-9"), event("source-9")],
+      2,
+      1,
+      1,
+    );
+    expect(duplicatePage.map((entry) => entry.sourceEventId)).toEqual(["source-9", "source-9"]);
     expect(takeFreshStreamEvents(cursor, [event("source-2")], 4097, 4, 3)).toEqual([]);
     expect(cursor.cursor).toBe(4097);
   });

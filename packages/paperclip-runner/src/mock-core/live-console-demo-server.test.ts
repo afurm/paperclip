@@ -954,6 +954,9 @@ describe("Live console package-local demo server", () => {
 
     const tail = await readEvents(url, created.sessionId, MAX_BROWSER_EVENTS);
     expect(tail.cursor).toBe(cursor);
+    const state = await browserRequest(url, `/api/liveConsole/sessions/${created.sessionId}`)
+      .then((response) => response.json()) as { cursor: number };
+    expect(state.cursor).toBe(tail.cursor);
     expect(tail.events.map((event) => event.sourceSeq)).toEqual([cursor]);
 
     const caughtUp = await readEvents(url, created.sessionId, tail.cursor);
@@ -1033,6 +1036,30 @@ async function waitForCursor(url: string, sessionId: string, minimum: number): P
   }
 }
 
+
+function readStreamChunk(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs: number,
+  needle: string,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return new Promise((resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`stream never included ${needle}`));
+    }, timeoutMs);
+    reader.read().then(
+      (chunk) => {
+        if (timer !== undefined) clearTimeout(timer);
+        resolve(chunk);
+      },
+      (cause: unknown) => {
+        if (timer !== undefined) clearTimeout(timer);
+        reject(cause);
+      },
+    );
+  });
+}
+
 async function readEventStreamUntil(
   url: string,
   sessionId: string,
@@ -1050,8 +1077,9 @@ async function readEventStreamUntil(
   try {
     const started = Date.now();
     while (!result.includes(needle)) {
-      if (Date.now() - started > 10_000) throw new Error(`stream never included ${needle}`);
-      const chunk = await reader.read();
+      const remaining = 10_000 - (Date.now() - started);
+      if (remaining <= 0) throw new Error(`stream never included ${needle}`);
+      const chunk = await readStreamChunk(reader, remaining, needle);
       if (chunk.done) break;
       result += new TextDecoder().decode(chunk.value, { stream: true });
     }

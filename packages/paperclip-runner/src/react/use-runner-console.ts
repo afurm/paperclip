@@ -34,6 +34,19 @@ export interface RunnerStreamCursor {
   seenSourceEventIds: Set<string>;
 }
 
+/** Matches the server ring. Older ids cannot be replayed, so they do not need to stay in memory. */
+const SEEN_SOURCE_EVENT_LIMIT = 4096;
+
+function rememberSourceEventId(seen: Set<string>, sourceEventId: string): void {
+  if (seen.has(sourceEventId)) seen.delete(sourceEventId);
+  seen.add(sourceEventId);
+  while (seen.size > SEEN_SOURCE_EVENT_LIMIT) {
+    const oldest = seen.values().next().value;
+    if (oldest === undefined) break;
+    seen.delete(oldest);
+  }
+}
+
 export function createRunnerStreamCursor(
   events: readonly PrpEvent[] = [],
   cursor = 0,
@@ -52,8 +65,9 @@ export function acceptRunnerStreamEvent(
   eventGeneration: number,
 ): boolean {
   if (currentGeneration !== eventGeneration) return false;
-  if (cursor.seenSourceEventIds.has(event.sourceEventId)) return false;
-  cursor.seenSourceEventIds.add(event.sourceEventId);
+  // A second live delivery of the same source id is a protocol duplicate.
+  // The reducer records it; only a stale socket generation is dropped here.
+  rememberSourceEventId(cursor.seenSourceEventIds, event.sourceEventId);
   cursor.cursor += 1;
   return true;
 }
@@ -71,10 +85,13 @@ export function takeFreshStreamEvents(
   eventGeneration: number,
 ): PrpEvent[] {
   if (currentGeneration !== eventGeneration) return [];
+  const alreadyApplied = new Set(cursor.seenSourceEventIds);
   const fresh: PrpEvent[] = [];
   for (const event of events) {
-    if (cursor.seenSourceEventIds.has(event.sourceEventId)) continue;
-    cursor.seenSourceEventIds.add(event.sourceEventId);
+    // Skip ids applied by an earlier page or socket event. Duplicates inside
+    // this page are new deliveries and must reach the reducer.
+    if (alreadyApplied.has(event.sourceEventId)) continue;
+    rememberSourceEventId(cursor.seenSourceEventIds, event.sourceEventId);
     fresh.push(event);
   }
   cursor.cursor = nextCursor;

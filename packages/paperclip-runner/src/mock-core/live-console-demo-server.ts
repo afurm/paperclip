@@ -964,7 +964,7 @@ export class LiveConsoleDemoServer {
       pendingRequests: entry.session.pendingRuntimeRequests?.() ?? [],
       goal: harnessSnapshot.goal ?? null,
       lineage: entry.session.lineage?.() ?? [],
-      cursor: entry.events.length,
+      cursor: absoluteBrowserEventCursor(entry),
       snapshot,
     };
   }
