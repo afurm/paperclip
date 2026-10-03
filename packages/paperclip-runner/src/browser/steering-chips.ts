@@ -6,6 +6,12 @@ export interface ResolvableSteeringChip {
   detail: string | null;
   /** Item id, or source event id, of the acknowledgement already bound to this chip. */
   acknowledgementKey?: string;
+  /**
+   * Acknowledgements at or before this source sequence were already in the log
+   * when the chip was created. They belong to an earlier steer, including one
+   * whose chip was not restored with the session.
+   */
+  afterSourceSeq?: number;
 }
 
 export function steeringAcknowledgementKey(event: Pick<PrpEvent, "itemId" | "sourceEventId">): string {
@@ -19,6 +25,14 @@ export function isSteeringAcknowledgement(event: PrpEvent): boolean {
   );
 }
 
+export function latestSteeringSourceSeq(events: readonly Pick<PrpEvent, "sourceSeq">[]): number {
+  let latest = 0;
+  for (const event of events) {
+    if (event.sourceSeq !== undefined && event.sourceSeq > latest) latest = event.sourceSeq;
+  }
+  return latest;
+}
+
 function acknowledgementMatches(
   event: PrpEvent,
   chip: ResolvableSteeringChip,
@@ -27,6 +41,7 @@ function acknowledgementMatches(
   const key = steeringAcknowledgementKey(event);
   if (consumed.has(key)) return false;
   if (event.turnId !== undefined && event.turnId !== chip.expectedTurnId) return false;
+  if (chip.afterSourceSeq !== undefined && (event.sourceSeq ?? 0) <= chip.afterSourceSeq) return false;
   return true;
 }
 

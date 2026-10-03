@@ -11,6 +11,7 @@ function chip(
   status: ResolvableSteeringChip["status"],
   expectedTurnId = "turn-1",
   acknowledgementKey?: string,
+  afterSourceSeq?: number,
 ): ResolvableSteeringChip & { id: string; text: string } {
   return {
     id,
@@ -19,12 +20,14 @@ function chip(
     status,
     detail: null,
     ...(acknowledgementKey === undefined ? {} : { acknowledgementKey }),
+    ...(afterSourceSeq === undefined ? {} : { afterSourceSeq }),
   };
 }
 
-function acknowledgement(sourceEventId: string, turnId: string, itemId: string): PrpEvent {
+function acknowledgement(sourceEventId: string, turnId: string, itemId: string, sourceSeq = 1): PrpEvent {
   return {
     sourceEventId,
+    sourceSeq,
     turnId,
     itemId,
     eventType: "item.completed",
@@ -77,5 +80,31 @@ describe("resolveSteeringChips", () => {
     );
 
     expect(resolved).toEqual([chip("waiting", "pending", "turn-2")]);
+  });
+
+  it("does not give a new steer an acknowledgement that was already in the log", () => {
+    const resolved = resolveSteeringChips(
+      [
+        chip("lost", "failed", "turn-1", undefined, 4),
+        chip("next", "pending", "turn-1", undefined, 4),
+      ],
+      [acknowledgement("event-1", "turn-1", "item-1", 4)],
+    );
+
+    expect(resolved[0]).toMatchObject({ status: "failed" });
+    expect(resolved[1]).toMatchObject({ status: "pending" });
+    expect(resolved[1].acknowledgementKey).toBeUndefined();
+  });
+
+  it("binds a steer only to an acknowledgement that arrives after it was created", () => {
+    const resolved = resolveSteeringChips(
+      [chip("next", "pending", "turn-1", undefined, 4)],
+      [
+        acknowledgement("event-1", "turn-1", "item-1", 4),
+        acknowledgement("event-2", "turn-1", "item-2", 5),
+      ],
+    );
+
+    expect(resolved[0]).toMatchObject({ status: "acknowledged", acknowledgementKey: "item-2" });
   });
 });

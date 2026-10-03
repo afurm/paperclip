@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { PrpEvent } from "../../../../src/protocol/replay-contract";
-import { resolveSteeringChips } from "../../../../src/browser/steering-chips";
+import { latestSteeringSourceSeq, resolveSteeringChips } from "../../../../src/browser/steering-chips";
 import {
   applyPrpEvent,
   createSessionSnapshotFromMetadata,
@@ -57,6 +57,8 @@ export interface SteeringChip {
   detail: string | null;
   /** Set once this chip is bound to one acknowledgement. */
   acknowledgementKey?: string;
+  /** Source sequence already in the log when this chip was created. */
+  afterSourceSeq?: number;
 }
 
 function reduceEvents(
@@ -127,6 +129,8 @@ export function useLiveConsole(): LiveConsole {
   const [selectedManifestId, setSelectedManifestId] = useState("completion");
   const [state, setState] = useState<LiveSessionState | null>(null);
   const [events, setEvents] = useState<PrpEvent[]>([]);
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
   const [connection, setConnection] = useState<LiveConnectionStatus>("idle");
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [steeringChips, setSteeringChips] = useState<SteeringChip[]>([]);
@@ -392,9 +396,10 @@ export function useLiveConsole(): LiveConsole {
       const expectedTurnId = activeTurnId;
       if (sessionId === null || expectedTurnId === null) return;
       const chipId = `steer-${Date.now()}-${steeringChips.length}`;
+      const afterSourceSeq = latestSteeringSourceSeq(eventsRef.current);
       setSteeringChips((chips) => [
         ...chips,
-        { id: chipId, text, expectedTurnId, status: "pending", detail: null },
+        { id: chipId, text, expectedTurnId, status: "pending", detail: null, afterSourceSeq },
       ]);
       try {
         adopt(await client.steerTurn(sessionId, expectedTurnId, text));
