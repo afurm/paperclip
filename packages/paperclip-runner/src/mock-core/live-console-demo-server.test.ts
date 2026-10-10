@@ -932,6 +932,8 @@ describe("Live console package-local demo server", () => {
     expect(events.some(({ eventType }) => eventType === "session.resumed")).toBe(true);
   });
 
+  // Filling the ring takes a few thousand events, and the session-state
+  // request reduces all of them into a snapshot, so this runs past the default timeout.
   it("keeps the replay cursor absolute after the browser ring drops old events", async () => {
     const driver = new StubDriver();
     const server = new LiveConsoleDemoServer({
@@ -976,7 +978,7 @@ describe("Live console package-local demo server", () => {
       MAX_BROWSER_EVENTS,
     );
     expect(stream.split(`"sourceSeq":${cursor}`)).toHaveLength(2);
-  });
+  }, 30_000);
 
   it("delivers an event published while a subscriber is joining exactly once", async () => {
     const server = new LiveConsoleDemoServer({
